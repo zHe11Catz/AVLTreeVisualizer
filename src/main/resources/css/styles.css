@@ -1,0 +1,25 @@
+.app-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.canvas-container {
+    -fx-background-color: #f8f9fa;
+    -fx-border-color: #dee2e6;
+    -fx-border-width: 1;
+}
+
+.settings-overlay {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #dee2e6;
+    -fx-border-width: 0 0 0 1;
+    -fx-padding: 12;
+}
+
+.settings-panel {
+    -fx-spacing: 12;
+}
+
+.status-label {
+    -fx-text-fill: #495057;
+}

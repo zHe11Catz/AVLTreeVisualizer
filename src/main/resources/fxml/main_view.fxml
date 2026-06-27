@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane fx:id="rootPane" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="io.github.zhe11catz.avltreevisualizer.controller.AVLController">
+
+    <top>
+        <HBox spacing="8" alignment="CENTER_LEFT" BorderPane.alignment="CENTER">
+            <padding>
+                <Insets top="8" right="12" bottom="8" left="12"/>
+            </padding>
+            <Label text="AVL Tree Visualizer" styleClass="app-title"/>
+            <Pane HBox.hgrow="ALWAYS"/>
+            <Button fx:id="settingsButton" text="Cài đặt"/>
+        </HBox>
+    </top>
+
+    <center>
+        <StackPane fx:id="canvasContainer" styleClass="canvas-container"/>
+    </center>
+
+    <right>
+        <StackPane fx:id="settingsOverlay" prefWidth="240" styleClass="settings-overlay"/>
+    </right>
+
+    <bottom>
+        <VBox spacing="8" BorderPane.alignment="CENTER">
+            <padding>
+                <Insets top="8" right="12" bottom="12" left="12"/>
+            </padding>
+
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Label text="Giá trị:"/>
+                <TextField fx:id="valueField" promptText="Nhập số nguyên" prefWidth="140"/>
+                <Button fx:id="insertButton" text="Thêm"/>
+                <Button fx:id="deleteButton" text="Xóa"/>
+                <Button fx:id="searchButton" text="Tìm kiếm"/>
+                <Button fx:id="importButton" text="Nạp tệp (.txt)"/>
+                <Button fx:id="resetButton" text="Đặt lại"/>
+            </HBox>
+
+            <HBox spacing="8" alignment="CENTER_LEFT">
+                <Label text="Duyệt cây:"/>
+                <ComboBox fx:id="traversalSelector" promptText="Chọn kiểu duyệt" prefWidth="180"/>
+                <Button fx:id="traverseButton" text="Bắt đầu duyệt"/>
+            </HBox>
+
+            <Label fx:id="statusLabel" text="Sẵn sàng." styleClass="status-label"/>
+        </VBox>
+    </bottom>
+</BorderPane>
