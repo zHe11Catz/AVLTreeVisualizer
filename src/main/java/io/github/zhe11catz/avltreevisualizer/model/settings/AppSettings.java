@@ -8,9 +8,9 @@ import io.github.zhe11catz.avltreevisualizer.util.Constants;
 public class AppSettings {
 
     public enum AnimationSpeed {
-        SLOW(1500L),
+        SLOW(2000L),
         NORMAL(Constants.DEFAULT_ANIMATION_DURATION_MS),
-        FAST(500L);
+        FAST(400L);
 
         private final long durationMs;
 

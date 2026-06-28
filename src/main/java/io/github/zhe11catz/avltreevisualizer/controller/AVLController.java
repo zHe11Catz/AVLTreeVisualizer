@@ -148,7 +148,7 @@ public class AVLController implements Initializable {
         settingsOverlay.setManaged(false);
 
         setStatus("Sẵn sàng.");
-        Platform.runLater(this::bindCanvasSize);
+        Platform.runLater(treeCanvas::redraw);
 
         rootPane.sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null) {
@@ -159,12 +159,6 @@ public class AVLController implements Initializable {
                 });
             }
         });
-    }
-
-    private void bindCanvasSize() {
-        treeCanvas.widthProperty().bind(canvasContainer.widthProperty());
-        treeCanvas.heightProperty().bind(canvasContainer.heightProperty());
-        treeCanvas.redraw();
     }
 
     private void onInsert() {
