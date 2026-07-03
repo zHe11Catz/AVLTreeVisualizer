@@ -19,7 +19,8 @@ public class TreeLayout {
     public Map<Integer, NodePosition> calculateLayout(AVLNode root, double canvasWidth, double canvasHeight) {
         Map<Integer, NodePosition> positions = new HashMap<>();
         if (root != null) {
-            assignPositions(root, 0, 0, canvasWidth, positions);
+            double margin = 30.0;
+            assignPositions(root, 0, margin, canvasWidth - margin, positions);
         }
         return positions;
     }
