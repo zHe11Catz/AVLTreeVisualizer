@@ -1,14 +1,22 @@
 package io.github.zhe11catz.avltreevisualizer.view.canvas;
 
 import io.github.zhe11catz.avltreevisualizer.model.tree.AVLNode;
+import javafx.geometry.VPos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
+import javafx.scene.text.TextAlignment;
+
+import java.util.Map;
 
 /**
  * Canvas component responsible for rendering the AVL tree.
  */
 public class TreeCanvas extends Canvas {
+
+    private static final double NODE_RADIUS = 20.0;
+
+    private final TreeLayout treeLayout = new TreeLayout();
 
     private AVLNode root;
 
@@ -20,11 +28,6 @@ public class TreeCanvas extends Canvas {
 
     // ── Resizability ──────────────────────────────────────────────────────────
 
-    /**
-     * Returning true lets the parent (StackPane in BorderPane center) call
-     * resize(w, h) on this node during its layout pass, so the canvas fills
-     * the center region without creating circular preferred-size feedback.
-     */
     @Override
     public boolean isResizable() {
         return true;
@@ -50,10 +53,6 @@ public class TreeCanvas extends Canvas {
         return 0;
     }
 
-    /**
-     * Called by the layout system when the parent decides how large this canvas should be.
-     * The width/height listeners above will trigger redraw() automatically.
-     */
     @Override
     public void resize(double width, double height) {
         setWidth(width);
@@ -80,10 +79,60 @@ public class TreeCanvas extends Canvas {
 
         if (root == null) {
             gc.setFill(Color.GRAY);
-            gc.fillText("Cây đang trống", getWidth() / 2 - 40, getHeight() / 2);
+            gc.setTextAlign(TextAlignment.CENTER);
+            gc.setTextBaseline(VPos.CENTER);
+            gc.fillText("Cây đang trống", getWidth() / 2, getHeight() / 2);
             return;
         }
 
-        // TODO: use TreeLayout to compute positions and draw nodes/edges
+        Map<Integer, TreeLayout.NodePosition> positions =
+                treeLayout.calculateLayout(root, getWidth(), getHeight());
+
+        drawEdges(gc, root, positions);
+        drawNodes(gc, root, positions);
+    }
+
+    private void drawEdges(GraphicsContext gc, AVLNode node, Map<Integer, TreeLayout.NodePosition> positions) {
+        if (node == null) {
+            return;
+        }
+
+        TreeLayout.NodePosition parentPos = positions.get(node.getKey());
+        gc.setStroke(Color.web("#adb5bd"));
+        gc.setLineWidth(1.5);
+
+        if (node.getLeft() != null) {
+            TreeLayout.NodePosition childPos = positions.get(node.getLeft().getKey());
+            gc.strokeLine(parentPos.x(), parentPos.y(), childPos.x(), childPos.y());
+            drawEdges(gc, node.getLeft(), positions);
+        }
+        if (node.getRight() != null) {
+            TreeLayout.NodePosition childPos = positions.get(node.getRight().getKey());
+            gc.strokeLine(parentPos.x(), parentPos.y(), childPos.x(), childPos.y());
+            drawEdges(gc, node.getRight(), positions);
+        }
+    }
+
+    private void drawNodes(GraphicsContext gc, AVLNode node, Map<Integer, TreeLayout.NodePosition> positions) {
+        if (node == null) {
+            return;
+        }
+
+        TreeLayout.NodePosition pos = positions.get(node.getKey());
+
+        gc.setFill(Color.web("#4dabf7"));
+        gc.fillOval(pos.x() - NODE_RADIUS, pos.y() - NODE_RADIUS, NODE_RADIUS * 2, NODE_RADIUS * 2);
+
+        gc.setStroke(Color.web("#1c7ed6"));
+        gc.setLineWidth(2);
+        gc.strokeOval(pos.x() - NODE_RADIUS, pos.y() - NODE_RADIUS, NODE_RADIUS * 2, NODE_RADIUS * 2);
+
+        gc.setFill(Color.WHITE);
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.setTextBaseline(VPos.CENTER);
+        gc.fillText(String.valueOf(node.getKey()), pos.x(), pos.y());
+
+        drawNodes(gc, node.getLeft(), positions);
+        drawNodes(gc, node.getRight(), positions);
     }
 }
