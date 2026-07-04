@@ -6,6 +6,7 @@ import io.github.zhe11catz.avltreevisualizer.model.operation.SearchResult;
 import io.github.zhe11catz.avltreevisualizer.model.operation.TraversalResult;
 import io.github.zhe11catz.avltreevisualizer.model.operation.TraversalType;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.CompareStep;
+import io.github.zhe11catz.avltreevisualizer.model.operation.step.HighlightStep;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.RotateStep;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.TreeStep;
 
@@ -54,11 +55,14 @@ public class AVLTree {
     }
 
     /**
-     * Deletes a key and records algorithm steps for visualization.
+     * Deletes a key following standard BST deletion rules, then rebalances
+     * the AVL tree. Records comparison/highlight/rotation steps for visualization.
      */
     public DeleteResult delete(int key) {
-        // TODO: implement delete with step recording
-        return new DeleteResult(false, root, null);
+        boolean existedBefore = contains(key);
+        List<TreeStep> steps = new ArrayList<>();
+        root = deleteRecursive(root, key, steps);
+        return new DeleteResult(existedBefore, root, steps);
     }
 
     /**
@@ -122,6 +126,101 @@ public class AVLTree {
         // Right-heavy
         if (balance < -1) {
             if (insertedKey > node.getRight().getKey()) {
+                // Right-Right case
+                steps.add(new RotateStep(RotationType.LEFT, node.getKey()));
+                return rotateLeft(node);
+            } else {
+                // Right-Left case
+                steps.add(new RotateStep(RotationType.RIGHT_LEFT, node.getKey()));
+                node.setRight(rotateRight(node.getRight()));
+                return rotateLeft(node);
+            }
+        }
+
+        return node;
+    }
+
+    // ── Delete helpers ───────────────────────────────────────────────────────
+
+    private AVLNode deleteRecursive(AVLNode node, int key, List<TreeStep> steps) {
+        if (node == null) {
+            // Key not found on this path; nothing to record beyond the
+            // comparison steps already added by the caller.
+            return null;
+        }
+
+        if (key < node.getKey()) {
+            steps.add(new CompareStep(node.getKey(), key, true));
+            node.setLeft(deleteRecursive(node.getLeft(), key, steps));
+        } else if (key > node.getKey()) {
+            steps.add(new CompareStep(node.getKey(), key, false));
+            node.setRight(deleteRecursive(node.getRight(), key, steps));
+        } else {
+            // Found the node to delete.
+            steps.add(new HighlightStep(node.getKey()));
+
+            if (node.getLeft() == null || node.getRight() == null) {
+                // Case: leaf node or single-child node.
+                AVLNode child = (node.getLeft() != null) ? node.getLeft() : node.getRight();
+                node = child;
+            } else {
+                // Case: two children -> replace with inorder successor
+                // (smallest key in the right subtree).
+                AVLNode successor = findMin(node.getRight(), steps);
+                steps.add(new HighlightStep(successor.getKey()));
+
+                AVLNode newRight = deleteRecursive(node.getRight(), successor.getKey(), steps);
+
+                // Key is final on AVLNode, so we rebuild this position with a
+                // fresh node carrying the successor's key instead of mutating it.
+                AVLNode replacement = new AVLNode(successor.getKey());
+                replacement.setLeft(node.getLeft());
+                replacement.setRight(newRight);
+                node = replacement;
+            }
+        }
+
+        if (node == null) {
+            return null;
+        }
+
+        updateHeight(node);
+        return rebalanceAfterDelete(node, steps);
+    }
+
+    /**
+     * Walks to the leftmost node of the given subtree (inorder successor
+     * source), recording a highlight step at each visited node.
+     */
+    private AVLNode findMin(AVLNode node, List<TreeStep> steps) {
+        steps.add(new HighlightStep(node.getKey()));
+        while (node.getLeft() != null) {
+            node = node.getLeft();
+            steps.add(new HighlightStep(node.getKey()));
+        }
+        return node;
+    }
+
+    private AVLNode rebalanceAfterDelete(AVLNode node, List<TreeStep> steps) {
+        int balance = balanceFactor(node);
+
+        // Left-heavy
+        if (balance > 1) {
+            if (balanceFactor(node.getLeft()) >= 0) {
+                // Left-Left case
+                steps.add(new RotateStep(RotationType.RIGHT, node.getKey()));
+                return rotateRight(node);
+            } else {
+                // Left-Right case
+                steps.add(new RotateStep(RotationType.LEFT_RIGHT, node.getKey()));
+                node.setLeft(rotateLeft(node.getLeft()));
+                return rotateRight(node);
+            }
+        }
+
+        // Right-heavy
+        if (balance < -1) {
+            if (balanceFactor(node.getRight()) <= 0) {
                 // Right-Right case
                 steps.add(new RotateStep(RotationType.LEFT, node.getKey()));
                 return rotateLeft(node);
