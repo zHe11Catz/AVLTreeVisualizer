@@ -4,6 +4,7 @@ import io.github.zhe11catz.avltreevisualizer.model.operation.TraversalType;
 import io.github.zhe11catz.avltreevisualizer.model.persistence.StorageService;
 import io.github.zhe11catz.avltreevisualizer.model.settings.AppSettings;
 import io.github.zhe11catz.avltreevisualizer.model.tree.AVLTree;
+import io.github.zhe11catz.avltreevisualizer.util.Constants;
 import io.github.zhe11catz.avltreevisualizer.util.FileImportParser;
 import io.github.zhe11catz.avltreevisualizer.util.ValidationUtils;
 import io.github.zhe11catz.avltreevisualizer.view.animation.AnimationConfig;
@@ -24,7 +25,11 @@ import javafx.stage.FileChooser;
 
 import java.io.File;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.ResourceBundle;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -231,13 +236,103 @@ public class AVLController implements Initializable {
             return;
         }
 
+        List<Integer> rawValues;
         try {
-            var values = FileImportParser.parseFile(file.toPath());
-            setStatus("Đã đọc " + values.size() + " giá trị từ tệp. (TODO: chèn hàng loạt)");
+            rawValues = FileImportParser.parseFile(file.toPath());
         } catch (Exception ex) {
+            // REQ-5.4: unreadable file -> warn and leave current tree state untouched.
             showWarning("Lỗi tệp", "Không thể đọc tệp đã chọn.");
             LOGGER.log(Level.WARNING, "Import failed", ex);
+            return;
         }
+
+        importValues(rawValues);
+    }
+
+    /**
+     * Classifies parsed values (range, duplicate, capacity), then inserts the
+     * accepted subset into the tree one at a time via the animation engine.
+     */
+    private void importValues(List<Integer> rawValues) {
+        if (rawValues.isEmpty()) {
+            setStatus("Tệp không chứa giá trị hợp lệ nào.");
+            return;
+        }
+
+        Set<Integer> seenInFile = new HashSet<>();
+        List<Integer> validUnique = new ArrayList<>();
+        int skippedRange = 0;
+        int skippedDuplicate = 0;
+
+        for (int value : rawValues) {
+            if (!ValidationUtils.isValidNodeValue(value)) {
+                // REQ-5.1 / business rule: values outside [-9999, 9999] are ignored.
+                skippedRange++;
+                continue;
+            }
+            if (tree.contains(value) || !seenInFile.add(value)) {
+                // Business rule "Tính duy nhất khoá": skip values already in the
+                // tree or repeated within the file itself.
+                skippedDuplicate++;
+                continue;
+            }
+            validUnique.add(value);
+        }
+
+        int remainingCapacity = Math.max(0, Constants.MAX_NODE_COUNT - tree.size());
+        List<Integer> toInsert = validUnique.size() > remainingCapacity
+                ? validUnique.subList(0, remainingCapacity)
+                : validUnique;
+        int skippedLimit = validUnique.size() - toInsert.size();
+
+        if (toInsert.isEmpty()) {
+            setStatus(buildImportSummary(0, rawValues.size(), skippedRange, skippedDuplicate, skippedLimit));
+            return;
+        }
+
+        setControlsDisabled(true);
+        insertNextFromImport(toInsert, 0, rawValues.size(), skippedRange, skippedDuplicate, skippedLimit);
+    }
+
+    /**
+     * Inserts values one by one, chaining through the animation engine's
+     * completion callback so each node is animated in sequence.
+     */
+    private void insertNextFromImport(List<Integer> toInsert, int index, int totalRaw,
+                                      int skippedRange, int skippedDuplicate, int skippedLimit) {
+        if (index >= toInsert.size()) {
+            setControlsDisabled(false);
+            setStatus(buildImportSummary(toInsert.size(), totalRaw, skippedRange, skippedDuplicate, skippedLimit));
+            return;
+        }
+
+        int value = toInsert.get(index);
+        var result = tree.insert(value);
+        tree.setRoot(result.getRoot());
+        animationEngine.playSteps(result.getSteps(), () -> {
+            treeCanvas.setRoot(tree.getRoot());
+            insertNextFromImport(toInsert, index + 1, totalRaw, skippedRange, skippedDuplicate, skippedLimit);
+        });
+    }
+
+    private String buildImportSummary(int inserted, int totalRaw, int skippedRange, int skippedDuplicate, int skippedLimit) {
+        StringBuilder message = new StringBuilder();
+        message.append("Đã chèn ").append(inserted).append("/").append(totalRaw).append(" giá trị từ tệp.");
+
+        List<String> reasons = new ArrayList<>();
+        if (skippedRange > 0) {
+            reasons.add(skippedRange + " ngoài phạm vi [-9999, 9999]");
+        }
+        if (skippedDuplicate > 0) {
+            reasons.add(skippedDuplicate + " trùng lặp");
+        }
+        if (skippedLimit > 0) {
+            reasons.add(skippedLimit + " vượt giới hạn 127 nút");
+        }
+        if (!reasons.isEmpty()) {
+            message.append(" Bỏ qua: ").append(String.join(", ", reasons)).append(".");
+        }
+        return message.toString();
     }
 
     private void onReset() {
@@ -255,6 +350,15 @@ public class AVLController implements Initializable {
         boolean visible = !settingsOverlay.isVisible();
         settingsOverlay.setVisible(visible);
         settingsOverlay.setManaged(visible);
+    }
+
+    private void setControlsDisabled(boolean disabled) {
+        insertButton.setDisable(disabled);
+        deleteButton.setDisable(disabled);
+        searchButton.setDisable(disabled);
+        importButton.setDisable(disabled);
+        resetButton.setDisable(disabled);
+        traverseButton.setDisable(disabled);
     }
 
     private Integer parseInputValue() {
