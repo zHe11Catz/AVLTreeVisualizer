@@ -8,6 +8,7 @@ import io.github.zhe11catz.avltreevisualizer.model.operation.TraversalType;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.CompareStep;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.HighlightStep;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.RotateStep;
+import io.github.zhe11catz.avltreevisualizer.model.operation.step.StructuralChangeStep;
 import io.github.zhe11catz.avltreevisualizer.model.operation.step.TreeStep;
 
 import java.util.ArrayList;
@@ -47,31 +48,115 @@ public class AVLTree {
 
     /**
      * Inserts a key and records algorithm steps for visualization.
+     * <p>
+     * Steps are split into two phases so the view can stay in sync:
+     * (1) a read-only walk over the CURRENT tree recording a CompareStep at
+     * each ancestor visited, then (2) a {@link StructuralChangeStep} marking
+     * exactly when the new node (and any rebalancing) should appear, followed
+     * by any RotateStep highlights on the now-final structure.
      */
     public InsertResult insert(int key) {
         List<TreeStep> steps = new ArrayList<>();
-        root = insertRecursive(root, key, steps);
-        return new InsertResult(true, root, steps);
+
+        AVLNode current = root;
+        while (current != null && key != current.getKey()) {
+            boolean goLeft = key < current.getKey();
+            steps.add(new CompareStep(current.getKey(), key, goLeft));
+            current = goLeft ? current.getLeft() : current.getRight();
+        }
+        // If current != null here, key already exists; the controller checks
+        // contains() before calling insert(), so this shouldn't happen, but
+        // insertRecursive() below still no-ops defensively on a duplicate.
+
+        List<TreeStep> rebalanceSteps = new ArrayList<>();
+        AVLNode newRoot = insertRecursive(root, key, rebalanceSteps);
+
+        steps.add(new StructuralChangeStep(newRoot));
+        steps.add(new HighlightStep(key, HighlightStep.HighlightKind.NEW_NODE));
+        steps.addAll(rebalanceSteps);
+
+        root = newRoot;
+        return new InsertResult(true, newRoot, steps);
     }
 
     /**
      * Deletes a key following standard BST deletion rules, then rebalances
-     * the AVL tree. Records comparison/highlight/rotation steps for visualization.
+     * the AVL tree. Steps are split the same way as insert(): a read-only
+     * search phase (CompareStep + DELETE_TARGET highlights on the CURRENT
+     * tree) followed by a {@link StructuralChangeStep} and then any
+     * rebalancing RotateStep highlights on the final structure.
      */
     public DeleteResult delete(int key) {
-        boolean existedBefore = contains(key);
         List<TreeStep> steps = new ArrayList<>();
-        root = deleteRecursive(root, key, steps);
-        return new DeleteResult(existedBefore, root, steps);
+
+        AVLNode current = root;
+        AVLNode lastVisited = null;
+        while (current != null && key != current.getKey()) {
+            lastVisited = current;
+            boolean goLeft = key < current.getKey();
+            steps.add(new CompareStep(current.getKey(), key, goLeft));
+            current = goLeft ? current.getLeft() : current.getRight();
+        }
+
+        if (current == null) {
+            // REQ-2.1: not found. Highlight the last node compared (same
+            // convention as search()) and leave the tree untouched.
+            if (lastVisited != null) {
+                steps.add(new HighlightStep(lastVisited.getKey(), HighlightStep.HighlightKind.NOT_FOUND));
+            }
+            return new DeleteResult(false, root, steps);
+        }
+
+        // Found the target: highlight it (and the inorder successor path for
+        // the two-children case, REQ-2.2) before anything structurally changes.
+        steps.add(new HighlightStep(current.getKey(), HighlightStep.HighlightKind.DELETE_TARGET));
+        if (current.getLeft() != null && current.getRight() != null) {
+            AVLNode successor = current.getRight();
+            steps.add(new HighlightStep(successor.getKey(), HighlightStep.HighlightKind.DELETE_TARGET));
+            while (successor.getLeft() != null) {
+                successor = successor.getLeft();
+                steps.add(new HighlightStep(successor.getKey(), HighlightStep.HighlightKind.DELETE_TARGET));
+            }
+        }
+
+        List<TreeStep> rebalanceSteps = new ArrayList<>();
+        AVLNode newRoot = deleteRecursive(root, key, rebalanceSteps);
+
+        steps.add(new StructuralChangeStep(newRoot));
+        steps.addAll(rebalanceSteps);
+
+        root = newRoot;
+        return new DeleteResult(true, newRoot, steps);
     }
 
     /**
-     * Searches for a key and records the traversal path for visualization.
+     * Searches for a key, recording a CompareStep at every node visited on
+     * the way down, and a terminal HighlightStep (FOUND or NOT_FOUND) so the
+     * view layer can animate the search path (REQ-3.1 to REQ-3.3).
      */
     public SearchResult search(int key) {
-        AVLNode found = searchNode(root, key);
-        // TODO: record compare/highlight steps during search
-        return new SearchResult(found != null, found, null);
+        List<TreeStep> steps = new ArrayList<>();
+        AVLNode current = root;
+        AVLNode lastVisited = null;
+
+        while (current != null) {
+            lastVisited = current;
+
+            if (key == current.getKey()) {
+                steps.add(new HighlightStep(current.getKey(), HighlightStep.HighlightKind.FOUND));
+                return new SearchResult(true, current, steps);
+            }
+
+            boolean goLeft = key < current.getKey();
+            steps.add(new CompareStep(current.getKey(), key, goLeft));
+            current = goLeft ? current.getLeft() : current.getRight();
+        }
+
+        if (lastVisited != null) {
+            // REQ-3.3: highlight the last node compared before concluding "not found".
+            steps.add(new HighlightStep(lastVisited.getKey(), HighlightStep.HighlightKind.NOT_FOUND));
+        }
+        return new SearchResult(false, null, steps);
     }
 
     /**
@@ -84,15 +169,17 @@ public class AVLTree {
 
     // ── Insert helpers ───────────────────────────────────────────────────────
 
+    /**
+     * Mutates the tree to insert {@code key} and rebalances on the way back
+     * up. Only records RotateStep entries; comparison highlights are recorded
+     * separately by insert()'s read-only phase before this runs.
+     */
     private AVLNode insertRecursive(AVLNode node, int key, List<TreeStep> steps) {
         if (node == null) {
             return new AVLNode(key);
         }
 
-        boolean goLeft = key < node.getKey();
-        steps.add(new CompareStep(node.getKey(), key, goLeft));
-
-        if (goLeft) {
+        if (key < node.getKey()) {
             node.setLeft(insertRecursive(node.getLeft(), key, steps));
         } else if (key > node.getKey()) {
             node.setRight(insertRecursive(node.getRight(), key, steps));
@@ -142,23 +229,22 @@ public class AVLTree {
 
     // ── Delete helpers ───────────────────────────────────────────────────────
 
+    /**
+     * Mutates the tree to remove {@code key} and rebalances on the way back
+     * up. Only records RotateStep entries; the search/target highlights are
+     * recorded separately by delete()'s read-only phase before this runs.
+     */
     private AVLNode deleteRecursive(AVLNode node, int key, List<TreeStep> steps) {
         if (node == null) {
-            // Key not found on this path; nothing to record beyond the
-            // comparison steps already added by the caller.
             return null;
         }
 
         if (key < node.getKey()) {
-            steps.add(new CompareStep(node.getKey(), key, true));
             node.setLeft(deleteRecursive(node.getLeft(), key, steps));
         } else if (key > node.getKey()) {
-            steps.add(new CompareStep(node.getKey(), key, false));
             node.setRight(deleteRecursive(node.getRight(), key, steps));
         } else {
             // Found the node to delete.
-            steps.add(new HighlightStep(node.getKey()));
-
             if (node.getLeft() == null || node.getRight() == null) {
                 // Case: leaf node or single-child node.
                 AVLNode child = (node.getLeft() != null) ? node.getLeft() : node.getRight();
@@ -166,9 +252,7 @@ public class AVLTree {
             } else {
                 // Case: two children -> replace with inorder successor
                 // (smallest key in the right subtree).
-                AVLNode successor = findMin(node.getRight(), steps);
-                steps.add(new HighlightStep(successor.getKey()));
-
+                AVLNode successor = findMin(node.getRight());
                 AVLNode newRight = deleteRecursive(node.getRight(), successor.getKey(), steps);
 
                 // Key is final on AVLNode, so we rebuild this position with a
@@ -189,14 +273,11 @@ public class AVLTree {
     }
 
     /**
-     * Walks to the leftmost node of the given subtree (inorder successor
-     * source), recording a highlight step at each visited node.
+     * @return the leftmost (smallest-key) node of the given subtree.
      */
-    private AVLNode findMin(AVLNode node, List<TreeStep> steps) {
-        steps.add(new HighlightStep(node.getKey()));
+    private AVLNode findMin(AVLNode node) {
         while (node.getLeft() != null) {
             node = node.getLeft();
-            steps.add(new HighlightStep(node.getKey()));
         }
         return node;
     }
