@@ -181,11 +181,13 @@ public class AVLController implements Initializable {
         }
 
         var result = tree.insert(value);
-        tree.setRoot(result.getRoot());
-        animationEngine.playSteps(result.getSteps(), () -> {
-            treeCanvas.setRoot(tree.getRoot());
-            setStatus("Đã thêm nút " + value + ".");
-        });
+        // NOTE: don't touch treeCanvas here. The step list produced by
+        // AVLTree.insert() carries a StructuralChangeStep at the exact point
+        // where the new node should appear (right after its search-path
+        // highlights play), so the AnimationEngine updates the canvas itself
+        // when playback reaches it. Updating eagerly here would make the new
+        // node pop in before its own highlight animation finishes.
+        animationEngine.playSteps(result.getSteps(), () -> setStatus("Đã thêm nút " + value + "."));
     }
 
     private void onDelete() {
@@ -195,13 +197,12 @@ public class AVLController implements Initializable {
         }
 
         var result = tree.delete(value);
-        tree.setRoot(result.getRoot());
-        animationEngine.playSteps(result.getSteps(), () -> {
-            treeCanvas.setRoot(tree.getRoot());
-            setStatus(result.isSuccess()
-                    ? "Đã xóa nút " + value + "."
-                    : "Không tìm thấy nút " + value + " để xóa.");
-        });
+        // Same reasoning as onInsert(): the StructuralChangeStep inside
+        // result.getSteps() switches the canvas over at the right moment,
+        // right after the DELETE_TARGET highlight plays, not immediately.
+        animationEngine.playSteps(result.getSteps(), () -> setStatus(result.isSuccess()
+                ? "Đã xóa nút " + value + "."
+                : "Không tìm thấy nút " + value + " để xóa."));
     }
 
     private void onSearch() {
@@ -308,11 +309,8 @@ public class AVLController implements Initializable {
 
         int value = toInsert.get(index);
         var result = tree.insert(value);
-        tree.setRoot(result.getRoot());
-        animationEngine.playSteps(result.getSteps(), () -> {
-            treeCanvas.setRoot(tree.getRoot());
-            insertNextFromImport(toInsert, index + 1, totalRaw, skippedRange, skippedDuplicate, skippedLimit);
-        });
+        animationEngine.playSteps(result.getSteps(), () ->
+                insertNextFromImport(toInsert, index + 1, totalRaw, skippedRange, skippedDuplicate, skippedLimit));
     }
 
     private String buildImportSummary(int inserted, int totalRaw, int skippedRange, int skippedDuplicate, int skippedLimit) {
