@@ -44,7 +44,7 @@
 
             <HBox spacing="8" alignment="CENTER_LEFT">
                 <Label text="Duyệt cây:"/>
-                <ComboBox fx:id="traversalSelector" promptText="Chọn kiểu duyệt" prefWidth="180"/>
+                <ComboBox fx:id="traversalSelector" promptText="Chọn kiểu duyệt"/>
                 <Button fx:id="traverseButton" text="Bắt đầu duyệt"/>
             </HBox>
 
