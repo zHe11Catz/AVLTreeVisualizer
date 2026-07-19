@@ -30,6 +30,11 @@ public class AnimationEngine {
     private final TreeCanvas treeCanvas;
     private final AnimationConfig animationConfig;
 
+    // Tracks the currently pending step delay so stop() can cancel it,
+    // and whether playback has been cancelled so playFrom() stops recursing.
+    private PauseTransition currentPause;
+    private boolean cancelled;
+
     public AnimationEngine(TreeCanvas treeCanvas, AnimationConfig animationConfig) {
         this.treeCanvas = treeCanvas;
         this.animationConfig = animationConfig;
@@ -41,6 +46,7 @@ public class AnimationEngine {
      */
     public void playSteps(List<TreeStep> steps, Runnable onFinished) {
         treeCanvas.clearHighlights();
+        cancelled = false;
 
         if (!animationConfig.isAnimationEnabled()) {
             // REQ-7.1: apply every step instantly (structural changes still
@@ -73,6 +79,12 @@ public class AnimationEngine {
     }
 
     private void playFrom(List<TreeStep> steps, int index, Duration stepDuration, Runnable onAllFinished) {
+        if (cancelled) {
+            // Playback was stopped mid-way; do not call onAllFinished so the
+            // caller's "completed" status message is never shown.
+            return;
+        }
+
         if (index >= steps.size()) {
             onAllFinished.run();
             return;
@@ -80,9 +92,22 @@ public class AnimationEngine {
 
         applyStep(steps.get(index));
 
-        PauseTransition pause = new PauseTransition(stepDuration);
-        pause.setOnFinished(event -> playFrom(steps, index + 1, stepDuration, onAllFinished));
-        pause.play();
+        currentPause = new PauseTransition(stepDuration);
+        currentPause.setOnFinished(event -> playFrom(steps, index + 1, stepDuration, onAllFinished));
+        currentPause.play();
+    }
+
+    /**
+     * Cancels any in-progress playback immediately. The onFinished callback
+     * originally passed to playSteps() will NOT be invoked after this.
+     * Safe to call even if nothing is currently playing.
+     */
+    public void stop() {
+        cancelled = true;
+        if (currentPause != null) {
+            currentPause.stop();
+        }
+        treeCanvas.clearHighlights();
     }
 
     private void applyStep(TreeStep step) {

@@ -46,6 +46,7 @@
                 <Label text="Duyệt cây:"/>
                 <ComboBox fx:id="traversalSelector" promptText="Chọn kiểu duyệt"/>
                 <Button fx:id="traverseButton" text="Bắt đầu duyệt"/>
+                <Button fx:id="stopButton" text="Dừng" visible="false" managed="false"/>
             </HBox>
 
             <Label fx:id="statusLabel" text="Sẵn sàng." styleClass="status-label"/>
