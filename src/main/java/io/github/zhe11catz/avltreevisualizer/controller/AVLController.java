@@ -3,6 +3,7 @@ package io.github.zhe11catz.avltreevisualizer.controller;
 import io.github.zhe11catz.avltreevisualizer.model.operation.TraversalType;
 import io.github.zhe11catz.avltreevisualizer.model.persistence.StorageService;
 import io.github.zhe11catz.avltreevisualizer.model.settings.AppSettings;
+import io.github.zhe11catz.avltreevisualizer.model.tree.AVLNode;
 import io.github.zhe11catz.avltreevisualizer.model.tree.AVLTree;
 import io.github.zhe11catz.avltreevisualizer.util.Constants;
 import io.github.zhe11catz.avltreevisualizer.util.FileImportParser;
@@ -89,6 +90,7 @@ public class AVLController implements Initializable {
     private StorageService storageService;
     private TreeCanvas treeCanvas;
     private AnimationEngine animationEngine;
+    private Runnable pendingCancelAction;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -132,7 +134,7 @@ public class AVLController implements Initializable {
         importButton.setOnAction(event -> onImportFile());
         resetButton.setOnAction(event -> onReset());
         traverseButton.setOnAction(event -> onTraverse());
-        stopButton.setOnAction(event -> onStopTraversal());
+        stopButton.setOnAction(event -> onStopOperation());
         settingsButton.setOnAction(event -> toggleSettingsSidebar());
     }
 
@@ -172,9 +174,7 @@ public class AVLController implements Initializable {
 
     private void onInsert() {
         Integer value = parseInputValue();
-        if (value == null) {
-            return;
-        }
+        if (value == null) return;
         if (!ValidationUtils.canAcceptMoreNodes(tree.size())) {
             showWarning("Giới hạn nút", "Cây đã đạt tối đa 127 nút.");
             return;
@@ -184,35 +184,34 @@ public class AVLController implements Initializable {
             return;
         }
 
+        AVLNode previousRoot = tree.getRoot(); // untouched deep-copy source, safe rollback target
         var result = tree.insert(value);
-        // NOTE: don't touch treeCanvas here. The step list produced by
-        // AVLTree.insert() carries a StructuralChangeStep at the exact point
-        // where the new node should appear (right after its search-path
-        // highlights play), so the AnimationEngine updates the canvas itself
-        // when playback reaches it. Updating eagerly here would make the new
-        // node pop in before its own highlight animation finishes.
-        setControlsDisabled(true);
+
+        beginAnimatedOperation(() -> {
+            tree.setRoot(previousRoot);
+            treeCanvas.setRoot(previousRoot);
+        });
         setStatus("Đang tìm vị trí chèn cho nút " + value + "...");
         animationEngine.playSteps(result.getSteps(), () -> {
-            setControlsDisabled(false);
+            endAnimatedOperation();
             setStatus("Đã thêm nút " + value + ".");
         });
     }
 
     private void onDelete() {
         Integer value = parseInputValue();
-        if (value == null) {
-            return;
-        }
+        if (value == null) return;
 
+        AVLNode previousRoot = tree.getRoot();
         var result = tree.delete(value);
-        // Same reasoning as onInsert(): the StructuralChangeStep inside
-        // result.getSteps() switches the canvas over at the right moment,
-        // right after the DELETE_TARGET highlight plays, not immediately.
-        setControlsDisabled(true);
+
+        beginAnimatedOperation(() -> {
+            tree.setRoot(previousRoot);
+            treeCanvas.setRoot(previousRoot);
+        });
         setStatus("Đang tìm nút " + value + "...");
         animationEngine.playSteps(result.getSteps(), () -> {
-            setControlsDisabled(false);
+            endAnimatedOperation();
             setStatus(result.isSuccess()
                     ? "Đã xóa nút " + value + "."
                     : "Không tìm thấy nút " + value + " để xóa.");
@@ -221,15 +220,13 @@ public class AVLController implements Initializable {
 
     private void onSearch() {
         Integer value = parseInputValue();
-        if (value == null) {
-            return;
-        }
+        if (value == null) return;
 
         var result = tree.search(value);
-        setControlsDisabled(true);
+        beginAnimatedOperation(null);
         setStatus("Đang tìm nút " + value + "...");
         animationEngine.playSteps(result.getSteps(), () -> {
-            setControlsDisabled(false);
+            endAnimatedOperation();
             setStatus(result.isSuccess()
                     ? "Đã tìm thấy nút " + value + "."
                     : "Không tìm thấy nút " + value + ".");
@@ -250,22 +247,22 @@ public class AVLController implements Initializable {
         var result = tree.traverse(type);
         String label = traversalSelector.getConverter().toString(type);
 
-        setControlsDisabled(true);
-        showStopButton(true);
+        beginAnimatedOperation(null);
         setStatus("Đang duyệt...");
 
         animationEngine.playSteps(result.getSteps(), () -> {
-            setControlsDisabled(false);
-            showStopButton(false);
+            endAnimatedOperation();
             setStatus("Duyệt " + label + ": " + formatTraversalResult(result.getValues()));
         });
     }
 
-    private void onStopTraversal() {
-        animationEngine.stop();
-        setControlsDisabled(false);
-        showStopButton(false);
-        setStatus("Đã dừng duyệt.");
+    private void onStopOperation() {
+        animationEngine.stop(); // cancels pending pause + clears highlights
+        if (pendingCancelAction != null) {
+            pendingCancelAction.run();
+        }
+        endAnimatedOperation();
+        setStatus("Đã dừng thao tác.");
     }
 
     private void showStopButton(boolean visible) {
@@ -415,6 +412,18 @@ public class AVLController implements Initializable {
         traverseButton.setDisable(disabled);
         valueField.setDisable(disabled);
         traversalSelector.setDisable(disabled);
+    }
+
+    private void beginAnimatedOperation(Runnable cancelAction) {
+        this.pendingCancelAction = cancelAction;
+        setControlsDisabled(true);
+        showStopButton(true);
+    }
+
+    private void endAnimatedOperation() {
+        this.pendingCancelAction = null;
+        setControlsDisabled(false);
+        showStopButton(false);
     }
 
     private Integer parseInputValue() {
