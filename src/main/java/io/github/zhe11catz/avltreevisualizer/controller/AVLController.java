@@ -98,10 +98,10 @@ public class AVLController implements Initializable {
                     return "";
                 }
                 return switch (type) {
-                    case INORDER -> "Inorder (Trung tự)";
-                    case PREORDER -> "Preorder (Tiền tự)";
-                    case POSTORDER -> "Postorder (Hậu tự)";
-                    case LEVEL_ORDER -> "Level-order (Theo mức)";
+                    case INORDER -> "Trung tự";
+                    case PREORDER -> "Tiền tự";
+                    case POSTORDER -> "Hậu tự";
+                    case LEVEL_ORDER -> "Theo mức";
                 };
             }
 
@@ -223,9 +223,27 @@ public class AVLController implements Initializable {
             showWarning("Thiếu lựa chọn", "Vui lòng chọn kiểu duyệt cây.");
             return;
         }
+        if (tree.isEmpty()) {
+            // REQ-4.4: empty tree -> notify, no animation.
+            setStatus("Cây đang trống, không có gì để duyệt.");
+            return;
+        }
 
         var result = tree.traverse(type);
-        animationEngine.playSteps(result.getSteps(), () -> setStatus("Duyệt " + type + ": " + result.getValues()));
+        String label = traversalSelector.getConverter().toString(type);
+        animationEngine.playSteps(result.getSteps(), () ->
+                setStatus("Duyệt " + label + ": " + formatTraversalResult(result.getValues())));
+    }
+
+    private String formatTraversalResult(List<Integer> values) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(values.get(i));
+        }
+        return sb.toString();
     }
 
     private void onImportFile() {

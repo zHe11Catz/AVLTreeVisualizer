@@ -13,6 +13,8 @@ import io.github.zhe11catz.avltreevisualizer.model.operation.step.TreeStep;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ArrayDeque;
+import java.util.Queue;
 
 /**
  * Core AVL tree engine containing all tree algorithms.
@@ -160,11 +162,103 @@ public class AVLTree {
     }
 
     /**
-     * Traverses the tree in the given order.
+     * Traverses the tree in the given order, recording a VISIT HighlightStep
+     * for each node in the order it's visited (REQ-4.1 to REQ-4.4).
+     * <p>
+     * All four traversal orders — INORDER, PREORDER, POSTORDER, LEVEL_ORDER —
+     * are implemented.
      */
     public TraversalResult traverse(TraversalType type) {
-        // TODO: implement traversal with step recording
-        return new TraversalResult(type, null, null);
+        List<Integer> values = new ArrayList<>();
+        List<TreeStep> steps = new ArrayList<>();
+
+        if (root == null) {
+            // REQ-4.4: empty tree -> no steps, no animation.
+            return new TraversalResult(type, values, steps);
+        }
+
+        switch (type) {
+            case INORDER -> inorderTraverse(root, values, steps);
+            case PREORDER -> preorderTraverse(root, values, steps);
+            case POSTORDER -> postorderTraverse(root, values, steps);
+            case LEVEL_ORDER -> levelOrderTraverse(root, values, steps);
+        }
+
+        return new TraversalResult(type, values, steps);
+    }
+
+    // ── Traversal helpers ────────────────────────────────────────────────────
+
+    /**
+     * Left -> Root -> Right. Produces keys in ascending order for a valid
+     * AVL/BST (REQ-4.1). Each visited node gets a VISIT HighlightStep in
+     * visitation order, and its key is appended to the result sequence
+     * (REQ-4.3 groundwork - the view currently applies these after playback
+     * finishes rather than incrementally; that refinement comes later).
+     */
+    private void inorderTraverse(AVLNode node, List<Integer> values, List<TreeStep> steps) {
+        if (node == null) {
+            return;
+        }
+        inorderTraverse(node.getLeft(), values, steps);
+        steps.add(new HighlightStep(node.getKey(), HighlightStep.HighlightKind.VISIT));
+        values.add(node.getKey());
+        inorderTraverse(node.getRight(), values, steps);
+    }
+
+    /**
+     * Root -> Left -> Right. Visits and highlights the root before either
+     * subtree, unlike inorder (REQ-4.1). Same VISIT HighlightStep + value
+     * accumulation pattern as inorderTraverse().
+     */
+    private void preorderTraverse(AVLNode node, List<Integer> values, List<TreeStep> steps) {
+        if (node == null) {
+            return;
+        }
+        steps.add(new HighlightStep(node.getKey(), HighlightStep.HighlightKind.VISIT));
+        values.add(node.getKey());
+        preorderTraverse(node.getLeft(), values, steps);
+        preorderTraverse(node.getRight(), values, steps);
+    }
+
+    /**
+     * Left -> Right -> Root. Visits and highlights the root last, after both
+     * subtrees (REQ-4.1). Same VISIT HighlightStep + value accumulation
+     * pattern as inorderTraverse() / preorderTraverse().
+     */
+    private void postorderTraverse(AVLNode node, List<Integer> values, List<TreeStep> steps) {
+        if (node == null) {
+            return;
+        }
+        postorderTraverse(node.getLeft(), values, steps);
+        postorderTraverse(node.getRight(), values, steps);
+        steps.add(new HighlightStep(node.getKey(), HighlightStep.HighlightKind.VISIT));
+        values.add(node.getKey());
+    }
+
+    /**
+     * Breadth-first, level by level, left to right within each level (REQ-4.1).
+     * Implemented iteratively with a FIFO queue rather than recursion, since
+     * level-order is inherently a queue-driven traversal. Same VISIT
+     * HighlightStep + value accumulation pattern as the other traversal
+     * helpers, so playback order matches the queue's dequeue order exactly.
+     */
+    private void levelOrderTraverse(AVLNode root, List<Integer> values, List<TreeStep> steps) {
+        Queue<AVLNode> queue = new ArrayDeque<>();
+        queue.add(root);
+
+        while (!queue.isEmpty()) {
+            AVLNode node = queue.poll();
+            steps.add(new HighlightStep(node.getKey(), HighlightStep.HighlightKind.VISIT));
+            values.add(node.getKey());
+
+            if (node.getLeft() != null) {
+                queue.add(node.getLeft());
+            }
+            if (node.getRight() != null) {
+                queue.add(node.getRight());
+            }
+        }
     }
 
     // ── Insert helpers ───────────────────────────────────────────────────────
