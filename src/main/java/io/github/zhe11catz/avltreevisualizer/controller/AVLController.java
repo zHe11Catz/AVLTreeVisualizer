@@ -192,6 +192,7 @@ public class AVLController implements Initializable {
         // when playback reaches it. Updating eagerly here would make the new
         // node pop in before its own highlight animation finishes.
         setControlsDisabled(true);
+        setStatus("Đang tìm vị trí chèn cho nút " + value + "...");
         animationEngine.playSteps(result.getSteps(), () -> {
             setControlsDisabled(false);
             setStatus("Đã thêm nút " + value + ".");
@@ -209,6 +210,7 @@ public class AVLController implements Initializable {
         // result.getSteps() switches the canvas over at the right moment,
         // right after the DELETE_TARGET highlight plays, not immediately.
         setControlsDisabled(true);
+        setStatus("Đang tìm nút " + value + "...");
         animationEngine.playSteps(result.getSteps(), () -> {
             setControlsDisabled(false);
             setStatus(result.isSuccess()
@@ -225,6 +227,7 @@ public class AVLController implements Initializable {
 
         var result = tree.search(value);
         setControlsDisabled(true);
+        setStatus("Đang tìm nút " + value + "...");
         animationEngine.playSteps(result.getSteps(), () -> {
             setControlsDisabled(false);
             setStatus(result.isSuccess()
@@ -249,7 +252,7 @@ public class AVLController implements Initializable {
 
         setControlsDisabled(true);
         showStopButton(true);
-        setStatus("Đang duyệt.");
+        setStatus("Đang duyệt...");
 
         animationEngine.playSteps(result.getSteps(), () -> {
             setControlsDisabled(false);
