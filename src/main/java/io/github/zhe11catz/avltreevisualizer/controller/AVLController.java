@@ -79,6 +79,9 @@ public class AVLController implements Initializable {
     @FXML
     private StackPane settingsOverlay;
 
+    @FXML
+    private Button stopButton;
+
     private SettingsPanel settingsPanel;
 
     private AVLTree tree;
@@ -129,6 +132,7 @@ public class AVLController implements Initializable {
         importButton.setOnAction(event -> onImportFile());
         resetButton.setOnAction(event -> onReset());
         traverseButton.setOnAction(event -> onTraverse());
+        stopButton.setOnAction(event -> onStopTraversal());
         settingsButton.setOnAction(event -> toggleSettingsSidebar());
     }
 
@@ -187,7 +191,11 @@ public class AVLController implements Initializable {
         // highlights play), so the AnimationEngine updates the canvas itself
         // when playback reaches it. Updating eagerly here would make the new
         // node pop in before its own highlight animation finishes.
-        animationEngine.playSteps(result.getSteps(), () -> setStatus("Đã thêm nút " + value + "."));
+        setControlsDisabled(true);
+        animationEngine.playSteps(result.getSteps(), () -> {
+            setControlsDisabled(false);
+            setStatus("Đã thêm nút " + value + ".");
+        });
     }
 
     private void onDelete() {
@@ -200,9 +208,13 @@ public class AVLController implements Initializable {
         // Same reasoning as onInsert(): the StructuralChangeStep inside
         // result.getSteps() switches the canvas over at the right moment,
         // right after the DELETE_TARGET highlight plays, not immediately.
-        animationEngine.playSteps(result.getSteps(), () -> setStatus(result.isSuccess()
-                ? "Đã xóa nút " + value + "."
-                : "Không tìm thấy nút " + value + " để xóa."));
+        setControlsDisabled(true);
+        animationEngine.playSteps(result.getSteps(), () -> {
+            setControlsDisabled(false);
+            setStatus(result.isSuccess()
+                    ? "Đã xóa nút " + value + "."
+                    : "Không tìm thấy nút " + value + " để xóa.");
+        });
     }
 
     private void onSearch() {
@@ -212,9 +224,13 @@ public class AVLController implements Initializable {
         }
 
         var result = tree.search(value);
-        animationEngine.playSteps(result.getSteps(), () -> setStatus(result.isSuccess()
-                ? "Đã tìm thấy nút " + value + "."
-                : "Không tìm thấy nút " + value + "."));
+        setControlsDisabled(true);
+        animationEngine.playSteps(result.getSteps(), () -> {
+            setControlsDisabled(false);
+            setStatus(result.isSuccess()
+                    ? "Đã tìm thấy nút " + value + "."
+                    : "Không tìm thấy nút " + value + ".");
+        });
     }
 
     private void onTraverse() {
@@ -224,15 +240,34 @@ public class AVLController implements Initializable {
             return;
         }
         if (tree.isEmpty()) {
-            // REQ-4.4: empty tree -> notify, no animation.
             setStatus("Cây đang trống, không có gì để duyệt.");
             return;
         }
 
         var result = tree.traverse(type);
         String label = traversalSelector.getConverter().toString(type);
-        animationEngine.playSteps(result.getSteps(), () ->
-                setStatus("Duyệt " + label + ": " + formatTraversalResult(result.getValues())));
+
+        setControlsDisabled(true);
+        showStopButton(true);
+        setStatus("Đang duyệt.");
+
+        animationEngine.playSteps(result.getSteps(), () -> {
+            setControlsDisabled(false);
+            showStopButton(false);
+            setStatus("Duyệt " + label + ": " + formatTraversalResult(result.getValues()));
+        });
+    }
+
+    private void onStopTraversal() {
+        animationEngine.stop();
+        setControlsDisabled(false);
+        showStopButton(false);
+        setStatus("Đã dừng duyệt.");
+    }
+
+    private void showStopButton(boolean visible) {
+        stopButton.setVisible(visible);
+        stopButton.setManaged(visible);
     }
 
     private String formatTraversalResult(List<Integer> values) {
@@ -375,6 +410,8 @@ public class AVLController implements Initializable {
         importButton.setDisable(disabled);
         resetButton.setDisable(disabled);
         traverseButton.setDisable(disabled);
+        valueField.setDisable(disabled);
+        traversalSelector.setDisable(disabled);
     }
 
     private Integer parseInputValue() {
