@@ -66,12 +66,13 @@ public class AVLTree {
             steps.add(new CompareStep(current.getKey(), key, goLeft));
             current = goLeft ? current.getLeft() : current.getRight();
         }
-        // If current != null here, key already exists; the controller checks
-        // contains() before calling insert(), so this shouldn't happen, but
-        // insertRecursive() below still no-ops defensively on a duplicate.
 
         List<TreeStep> rebalanceSteps = new ArrayList<>();
-        AVLNode newRoot = insertRecursive(root, key, rebalanceSteps);
+        // Mutate a deep copy, not the live node graph the canvas is still
+        // displaying — otherwise in-place setLeft()/setRight() calls below
+        // would change what the canvas renders before any step has played.
+        AVLNode workingRoot = deepCopy(root);
+        AVLNode newRoot = insertRecursive(workingRoot, key, rebalanceSteps);
 
         steps.add(new StructuralChangeStep(newRoot));
         steps.add(new HighlightStep(key, HighlightStep.HighlightKind.NEW_NODE));
@@ -101,16 +102,12 @@ public class AVLTree {
         }
 
         if (current == null) {
-            // REQ-2.1: not found. Highlight the last node compared (same
-            // convention as search()) and leave the tree untouched.
             if (lastVisited != null) {
                 steps.add(new HighlightStep(lastVisited.getKey(), HighlightStep.HighlightKind.NOT_FOUND));
             }
             return new DeleteResult(false, root, steps);
         }
 
-        // Found the target: highlight it (and the inorder successor path for
-        // the two-children case, REQ-2.2) before anything structurally changes.
         steps.add(new HighlightStep(current.getKey(), HighlightStep.HighlightKind.DELETE_TARGET));
         if (current.getLeft() != null && current.getRight() != null) {
             AVLNode successor = current.getRight();
@@ -122,7 +119,10 @@ public class AVLTree {
         }
 
         List<TreeStep> rebalanceSteps = new ArrayList<>();
-        AVLNode newRoot = deleteRecursive(root, key, rebalanceSteps);
+        // Same reasoning as insert(): work on a deep copy so the canvas's
+        // current node graph stays untouched until StructuralChangeStep plays.
+        AVLNode workingRoot = deepCopy(root);
+        AVLNode newRoot = deleteRecursive(workingRoot, key, rebalanceSteps);
 
         steps.add(new StructuralChangeStep(newRoot));
         steps.addAll(rebalanceSteps);
@@ -469,5 +469,25 @@ public class AVLTree {
             return 0;
         }
         return 1 + countNodes(node.getLeft()) + countNodes(node.getRight());
+    }
+
+    // ── Copy helper ──────────────────────────────────────────────────────────
+
+    /**
+     * Deep-copies the subtree rooted at {@code node}. Used before mutating
+     * algorithms (insert/delete) run, so the pre-existing node graph — which
+     * the view layer (TreeCanvas) may still be rendering mid-animation —
+     * is left completely untouched until a StructuralChangeStep explicitly
+     * hands over the new (copied) structure.
+     */
+    private AVLNode deepCopy(AVLNode node) {
+        if (node == null) {
+            return null;
+        }
+        AVLNode copy = new AVLNode(node.getKey());
+        copy.setHeight(node.getHeight());
+        copy.setLeft(deepCopy(node.getLeft()));
+        copy.setRight(deepCopy(node.getRight()));
+        return copy;
     }
 }
