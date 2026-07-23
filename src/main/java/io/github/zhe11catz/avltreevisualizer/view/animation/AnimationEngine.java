@@ -53,7 +53,7 @@ public class AnimationEngine {
             // need to happen even with animation off), then finish with no
             // lingering highlights.
             for (TreeStep step : steps) {
-                applyStep(step);
+                applyStep(step, Duration.ZERO);
             }
             treeCanvas.clearHighlights();
             if (onFinished != null) {
@@ -80,17 +80,14 @@ public class AnimationEngine {
 
     private void playFrom(List<TreeStep> steps, int index, Duration stepDuration, Runnable onAllFinished) {
         if (cancelled) {
-            // Playback was stopped mid-way; do not call onAllFinished so the
-            // caller's "completed" status message is never shown.
             return;
         }
-
         if (index >= steps.size()) {
             onAllFinished.run();
             return;
         }
 
-        applyStep(steps.get(index));
+        applyStep(steps.get(index), stepDuration);
 
         currentPause = new PauseTransition(stepDuration);
         currentPause.setOnFinished(event -> playFrom(steps, index + 1, stepDuration, onAllFinished));
@@ -110,18 +107,18 @@ public class AnimationEngine {
         treeCanvas.clearHighlights();
     }
 
-    private void applyStep(TreeStep step) {
+    private void applyStep(TreeStep step, Duration stepDuration) {
         if (step instanceof CompareStep compareStep) {
             treeCanvas.setHighlight(compareStep.currentKey(), HighlightStep.HighlightKind.COMPARE);
         } else if (step instanceof StructuralChangeStep structuralChangeStep) {
-            // The model already computed the fully mutated (and rebalanced)
-            // tree ahead of time; swap the canvas over to it now, exactly
-            // when playback reaches this marker.
-            treeCanvas.setRoot(structuralChangeStep.newRoot());
+            // Tween node positions to the new structure over the same duration
+            // as this step's pause, so movement and pacing stay in sync.
+            treeCanvas.animateToRoot(structuralChangeStep.newRoot(), stepDuration, null);
         } else if (step instanceof HighlightStep highlightStep) {
             treeCanvas.setHighlight(highlightStep.key(), highlightStep.kind());
         } else if (step instanceof RotateStep rotateStep) {
-            treeCanvas.redraw();
+            // Structure already animated by the StructuralChangeStep that
+            // preceded this one; just highlight the pivot for this step's pause.
             treeCanvas.setHighlight(rotateStep.pivotKey(), HighlightStep.HighlightKind.ROTATE_PIVOT);
         }
     }
