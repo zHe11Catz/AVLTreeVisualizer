@@ -51,11 +51,13 @@ public class AVLTree {
     /**
      * Inserts a key and records algorithm steps for visualization.
      * <p>
-     * Steps are split into two phases so the view can stay in sync:
+     * Steps are split into THREE phases so the view can stay in sync:
      * (1) a read-only walk over the CURRENT tree recording a CompareStep at
-     * each ancestor visited, then (2) a {@link StructuralChangeStep} marking
-     * exactly when the new node (and any rebalancing) should appear, followed
-     * by any RotateStep highlights on the now-final structure.
+     * each ancestor visited; (2) a raw BST insertion with no rebalancing yet,
+     * captured as an intermediate StructuralChangeStep so the view shows the
+     * node landing in its "natural" spot before any rotation; (3) rebalancing
+     * on top of that same structure, recording a RotateStep plus a second,
+     * final StructuralChangeStep only if a rotation actually happened.
      */
     public InsertResult insert(int key) {
         List<TreeStep> steps = new ArrayList<>();
@@ -67,27 +69,73 @@ public class AVLTree {
             current = goLeft ? current.getLeft() : current.getRight();
         }
 
-        List<TreeStep> rebalanceSteps = new ArrayList<>();
-        // Mutate a deep copy, not the live node graph the canvas is still
-        // displaying — otherwise in-place setLeft()/setRight() calls below
-        // would change what the canvas renders before any step has played.
-        AVLNode workingRoot = deepCopy(root);
-        AVLNode newRoot = insertRecursive(workingRoot, key, rebalanceSteps);
-
-        steps.add(new StructuralChangeStep(newRoot));
+        // Phase 1: plain BST insertion, no rebalancing yet. This snapshot is
+        // what the view animates to right after the compare steps, so the new
+        // node visibly lands at its raw insertion point first.
+        AVLNode unbalancedRoot = insertBstOnly(deepCopy(root), key);
+        steps.add(new StructuralChangeStep(unbalancedRoot));
         steps.add(new HighlightStep(key, HighlightStep.HighlightKind.NEW_NODE));
-        steps.addAll(rebalanceSteps);
+
+        // Phase 2: rebalance starting from that same unbalanced structure.
+        List<TreeStep> rebalanceSteps = new ArrayList<>();
+        AVLNode newRoot = rebalanceAfterInsert(deepCopy(unbalancedRoot), key, rebalanceSteps);
+
+        if (!rebalanceSteps.isEmpty()) {
+            // Only add a second structural change if a rotation actually
+            // happened; otherwise unbalancedRoot == final structure already.
+            steps.addAll(rebalanceSteps);
+            steps.add(new StructuralChangeStep(newRoot));
+        }
 
         root = newRoot;
         return new InsertResult(true, newRoot, steps);
     }
 
     /**
+     * Pure BST insertion with no AVL rebalancing. Used to capture the
+     * intermediate "just inserted, not yet rotated" snapshot for animation.
+     */
+    private AVLNode insertBstOnly(AVLNode node, int key) {
+        if (node == null) {
+            return new AVLNode(key);
+        }
+        if (key < node.getKey()) {
+            node.setLeft(insertBstOnly(node.getLeft(), key));
+        } else if (key > node.getKey()) {
+            node.setRight(insertBstOnly(node.getRight(), key));
+        }
+        updateHeight(node);
+        return node;
+    }
+
+    /**
+     * Walks back up an already-inserted (but not yet rebalanced) tree along
+     * {@code insertedKey}'s path, fixing heights and applying rotation(s) at
+     * the first unbalanced ancestor found, same as the old insertRecursive's
+     * second half.
+     */
+    private AVLNode rebalanceAfterInsert(AVLNode node, int insertedKey, List<TreeStep> steps) {
+        if (node == null) {
+            return null;
+        }
+        if (insertedKey < node.getKey()) {
+            node.setLeft(rebalanceAfterInsert(node.getLeft(), insertedKey, steps));
+        } else if (insertedKey > node.getKey()) {
+            node.setRight(rebalanceAfterInsert(node.getRight(), insertedKey, steps));
+        }
+        updateHeight(node);
+        return rebalance(node, insertedKey, steps);
+    }
+
+    /**
      * Deletes a key following standard BST deletion rules, then rebalances
-     * the AVL tree. Steps are split the same way as insert(): a read-only
-     * search phase (CompareStep + DELETE_TARGET highlights on the CURRENT
-     * tree) followed by a {@link StructuralChangeStep} and then any
-     * rebalancing RotateStep highlights on the final structure.
+     * the AVL tree. Steps are split into THREE phases, mirroring insert():
+     * (1) a read-only search phase (CompareStep + DELETE_TARGET highlights
+     * on the CURRENT tree); (2) a raw BST deletion with no rebalancing yet,
+     * captured as an intermediate StructuralChangeStep so the view shows the
+     * node actually leaving the tree before any rotation; (3) rebalancing on
+     * top of that same structure, recording RotateStep(s) plus a second,
+     * final StructuralChangeStep only if a rotation actually happened.
      */
     public DeleteResult delete(int key) {
         List<TreeStep> steps = new ArrayList<>();
@@ -118,17 +166,86 @@ public class AVLTree {
             }
         }
 
-        List<TreeStep> rebalanceSteps = new ArrayList<>();
-        // Same reasoning as insert(): work on a deep copy so the canvas's
-        // current node graph stays untouched until StructuralChangeStep plays.
-        AVLNode workingRoot = deepCopy(root);
-        AVLNode newRoot = deleteRecursive(workingRoot, key, rebalanceSteps);
+        // Phase 1: plain BST deletion, no rebalancing yet. This snapshot is
+        // what the view animates to right after the search/target highlights,
+        // so the node visibly leaves the tree (and, for the two-children case,
+        // gets replaced by its inorder successor) before any rotation.
+        AVLNode unbalancedRoot = deleteBstOnly(deepCopy(root), key);
+        steps.add(new StructuralChangeStep(unbalancedRoot));
 
-        steps.add(new StructuralChangeStep(newRoot));
-        steps.addAll(rebalanceSteps);
+        // Phase 2: rebalance starting from that same unbalanced structure.
+        // Unlike insert (which only ever unbalances one ancestor), delete can
+        // require rotations at MULTIPLE ancestors on the way back up, so this
+        // walks the whole remaining tree height, same as before.
+        List<TreeStep> rebalanceSteps = new ArrayList<>();
+        AVLNode newRoot = rebalanceAfterDeleteWholeTree(deepCopy(unbalancedRoot), rebalanceSteps);
+
+        if (!rebalanceSteps.isEmpty()) {
+            steps.addAll(rebalanceSteps);
+            steps.add(new StructuralChangeStep(newRoot));
+        }
 
         root = newRoot;
         return new DeleteResult(true, newRoot, steps);
+    }
+
+    /**
+     * Pure BST deletion with no AVL rebalancing. Handles all three classic
+     * cases (leaf, single child, two children via inorder successor) exactly
+     * like the old deleteRecursive() did, but stops short of touching height/
+     * balance — used to capture the intermediate "just deleted, not yet
+     * rotated" snapshot for animation.
+     */
+    private AVLNode deleteBstOnly(AVLNode node, int key) {
+        if (node == null) {
+            return null;
+        }
+
+        if (key < node.getKey()) {
+            node.setLeft(deleteBstOnly(node.getLeft(), key));
+        } else if (key > node.getKey()) {
+            node.setRight(deleteBstOnly(node.getRight(), key));
+        } else {
+            if (node.getLeft() == null || node.getRight() == null) {
+                AVLNode child = (node.getLeft() != null) ? node.getLeft() : node.getRight();
+                node = child;
+            } else {
+                AVLNode successor = findMin(node.getRight());
+                AVLNode newRight = deleteBstOnly(node.getRight(), successor.getKey());
+
+                // Key is final on AVLNode, so rebuild this position with a
+                // fresh node carrying the successor's key instead of mutating it.
+                AVLNode replacement = new AVLNode(successor.getKey());
+                replacement.setLeft(node.getLeft());
+                replacement.setRight(newRight);
+                node = replacement;
+            }
+        }
+
+        if (node != null) {
+            updateHeight(node);
+        }
+        return node;
+    }
+
+    /**
+     * Walks the already-deleted (but not yet rebalanced) tree bottom-up,
+     * fixing heights and applying rotations at every ancestor that's out of
+     * balance — same logic as the old deleteRecursive()'s rebalancing half,
+     * just decoupled from the deletion itself so it can run as its own phase
+     * on top of the deleteBstOnly() snapshot.
+     */
+    private AVLNode rebalanceAfterDeleteWholeTree(AVLNode node, List<TreeStep> steps) {
+        if (node == null) {
+            return null;
+        }
+        // No key to compare against here since the whole subtree may need
+        // re-checking after deletion (unlike insert, which only unbalances
+        // nodes on a single root-to-inserted-key path).
+        node.setLeft(rebalanceAfterDeleteWholeTree(node.getLeft(), steps));
+        node.setRight(rebalanceAfterDeleteWholeTree(node.getRight(), steps));
+        updateHeight(node);
+        return rebalanceAfterDelete(node, steps);
     }
 
     /**
@@ -268,24 +385,6 @@ public class AVLTree {
      * up. Only records RotateStep entries; comparison highlights are recorded
      * separately by insert()'s read-only phase before this runs.
      */
-    private AVLNode insertRecursive(AVLNode node, int key, List<TreeStep> steps) {
-        if (node == null) {
-            return new AVLNode(key);
-        }
-
-        if (key < node.getKey()) {
-            node.setLeft(insertRecursive(node.getLeft(), key, steps));
-        } else if (key > node.getKey()) {
-            node.setRight(insertRecursive(node.getRight(), key, steps));
-        } else {
-            // Duplicate key: the controller already checks contains() before
-            // calling insert(), so this branch is just a defensive no-op.
-            return node;
-        }
-
-        updateHeight(node);
-        return rebalance(node, key, steps);
-    }
 
     private AVLNode rebalance(AVLNode node, int insertedKey, List<TreeStep> steps) {
         int balance = balanceFactor(node);
@@ -322,49 +421,6 @@ public class AVLTree {
     }
 
     // ── Delete helpers ───────────────────────────────────────────────────────
-
-    /**
-     * Mutates the tree to remove {@code key} and rebalances on the way back
-     * up. Only records RotateStep entries; the search/target highlights are
-     * recorded separately by delete()'s read-only phase before this runs.
-     */
-    private AVLNode deleteRecursive(AVLNode node, int key, List<TreeStep> steps) {
-        if (node == null) {
-            return null;
-        }
-
-        if (key < node.getKey()) {
-            node.setLeft(deleteRecursive(node.getLeft(), key, steps));
-        } else if (key > node.getKey()) {
-            node.setRight(deleteRecursive(node.getRight(), key, steps));
-        } else {
-            // Found the node to delete.
-            if (node.getLeft() == null || node.getRight() == null) {
-                // Case: leaf node or single-child node.
-                AVLNode child = (node.getLeft() != null) ? node.getLeft() : node.getRight();
-                node = child;
-            } else {
-                // Case: two children -> replace with inorder successor
-                // (smallest key in the right subtree).
-                AVLNode successor = findMin(node.getRight());
-                AVLNode newRight = deleteRecursive(node.getRight(), successor.getKey(), steps);
-
-                // Key is final on AVLNode, so we rebuild this position with a
-                // fresh node carrying the successor's key instead of mutating it.
-                AVLNode replacement = new AVLNode(successor.getKey());
-                replacement.setLeft(node.getLeft());
-                replacement.setRight(newRight);
-                node = replacement;
-            }
-        }
-
-        if (node == null) {
-            return null;
-        }
-
-        updateHeight(node);
-        return rebalanceAfterDelete(node, steps);
-    }
 
     /**
      * @return the leftmost (smallest-key) node of the given subtree.
