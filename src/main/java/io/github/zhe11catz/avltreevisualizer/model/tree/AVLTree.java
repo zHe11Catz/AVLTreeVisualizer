@@ -56,8 +56,13 @@ public class AVLTree {
      * each ancestor visited; (2) a raw BST insertion with no rebalancing yet,
      * captured as an intermediate StructuralChangeStep so the view shows the
      * node landing in its "natural" spot before any rotation; (3) rebalancing
-     * on top of that same structure, recording a RotateStep plus a second,
-     * final StructuralChangeStep only if a rotation actually happened.
+     * on top of that same structure. Rebalancing itself only ever needs ONE
+     * or TWO atomic rotations (single case: RIGHT or LEFT; double case:
+     * LEFT_RIGHT/RIGHT_LEFT decomposed into two atomic rotations), and each
+     * atomic rotation is replayed individually via {@link #applyRotationAt}
+     * so it gets its own StructuralChangeStep - this is what makes a double
+     * rotation show as two distinct animated hops instead of one jump
+     * straight to the final shape.
      */
     public InsertResult insert(int key) {
         List<TreeStep> steps = new ArrayList<>();
@@ -77,15 +82,14 @@ public class AVLTree {
         steps.add(new HighlightStep(key, HighlightStep.HighlightKind.NEW_NODE));
 
         // Phase 2: rebalance starting from that same unbalanced structure.
+        // This recursion is only used to DETECT which atomic rotation(s) are
+        // needed (and to compute the trusted final tree, newRoot); the actual
+        // per-rotation animation steps are produced below by replaying each
+        // recorded atomic RotateStep on its own fresh copy.
         List<TreeStep> rebalanceSteps = new ArrayList<>();
         AVLNode newRoot = rebalanceAfterInsert(deepCopy(unbalancedRoot), key, rebalanceSteps);
 
-        if (!rebalanceSteps.isEmpty()) {
-            // Only add a second structural change if a rotation actually
-            // happened; otherwise unbalancedRoot == final structure already.
-            steps.addAll(rebalanceSteps);
-            steps.add(new StructuralChangeStep(newRoot));
-        }
+        appendRebalanceAnimationSteps(steps, unbalancedRoot, rebalanceSteps, newRoot);
 
         root = newRoot;
         return new InsertResult(true, newRoot, steps);
@@ -134,8 +138,11 @@ public class AVLTree {
      * on the CURRENT tree); (2) a raw BST deletion with no rebalancing yet,
      * captured as an intermediate StructuralChangeStep so the view shows the
      * node actually leaving the tree before any rotation; (3) rebalancing on
-     * top of that same structure, recording RotateStep(s) plus a second,
-     * final StructuralChangeStep only if a rotation actually happened.
+     * top of that same structure. Delete can require rotations at MULTIPLE
+     * ancestors (unlike insert), and any of those rotations may itself be a
+     * double rotation - every atomic rotation, at every ancestor, is replayed
+     * individually via {@link #applyRotationAt} so each one gets its own
+     * StructuralChangeStep instead of collapsing into a single final jump.
      */
     public DeleteResult delete(int key) {
         List<TreeStep> steps = new ArrayList<>();
@@ -176,17 +183,47 @@ public class AVLTree {
         // Phase 2: rebalance starting from that same unbalanced structure.
         // Unlike insert (which only ever unbalances one ancestor), delete can
         // require rotations at MULTIPLE ancestors on the way back up, so this
-        // walks the whole remaining tree height, same as before.
+        // walks the whole remaining tree height, same as before. As with
+        // insert, this recursion is only used to DETECT the needed atomic
+        // rotation(s) and compute the trusted final tree, newRoot.
         List<TreeStep> rebalanceSteps = new ArrayList<>();
         AVLNode newRoot = rebalanceAfterDeleteWholeTree(deepCopy(unbalancedRoot), rebalanceSteps);
 
-        if (!rebalanceSteps.isEmpty()) {
-            steps.addAll(rebalanceSteps);
-            steps.add(new StructuralChangeStep(newRoot));
-        }
+        appendRebalanceAnimationSteps(steps, unbalancedRoot, rebalanceSteps, newRoot);
 
         root = newRoot;
         return new DeleteResult(true, newRoot, steps);
+    }
+
+    /**
+     * Replays each atomic rotation recorded during rebalancing (in the exact
+     * order it was applied) against its own fresh copy of {@code unbalancedRoot},
+     * appending a RotateStep + StructuralChangeStep pair for every single one.
+     * <p>
+     * This is what makes every rotation - including each half of a double
+     * rotation, and each of several rotations across different ancestors
+     * during delete - land as its own visible animation hop. The very last
+     * pair uses the already-computed {@code newRoot} instead of the replayed
+     * tree, since that is the trusted, definitively-correct final structure.
+     */
+    private void appendRebalanceAnimationSteps(List<TreeStep> steps, AVLNode unbalancedRoot,
+                                               List<TreeStep> rebalanceSteps, AVLNode newRoot) {
+        if (rebalanceSteps.isEmpty()) {
+            return;
+        }
+
+        AVLNode replayRoot = deepCopy(unbalancedRoot);
+        for (int i = 0; i < rebalanceSteps.size(); i++) {
+            RotateStep rotateStep = (RotateStep) rebalanceSteps.get(i);
+            replayRoot = applyRotationAt(replayRoot, rotateStep.pivotKey(), rotateStep.rotationType());
+
+            boolean isLastAtomicStep = (i == rebalanceSteps.size() - 1);
+            steps.add(rotateStep);
+            // Snapshot NOW, before the next loop iteration's applyRotationAt
+            // call can mutate these same nodes out from under this step.
+            AVLNode snapshot = isLastAtomicStep ? newRoot : deepCopy(replayRoot);
+            steps.add(new StructuralChangeStep(snapshot));
+        }
     }
 
     /**
@@ -309,9 +346,7 @@ public class AVLTree {
     /**
      * Left -> Root -> Right. Produces keys in ascending order for a valid
      * AVL/BST (REQ-4.1). Each visited node gets a VISIT HighlightStep in
-     * visitation order, and its key is appended to the result sequence
-     * (REQ-4.3 groundwork - the view currently applies these after playback
-     * finishes rather than incrementally; that refinement comes later).
+     * visitation order, and its key is appended to the result sequence.
      */
     private void inorderTraverse(AVLNode node, List<Integer> values, List<TreeStep> steps) {
         if (node == null) {
@@ -325,8 +360,7 @@ public class AVLTree {
 
     /**
      * Root -> Left -> Right. Visits and highlights the root before either
-     * subtree, unlike inorder (REQ-4.1). Same VISIT HighlightStep + value
-     * accumulation pattern as inorderTraverse().
+     * subtree, unlike inorder (REQ-4.1).
      */
     private void preorderTraverse(AVLNode node, List<Integer> values, List<TreeStep> steps) {
         if (node == null) {
@@ -340,8 +374,7 @@ public class AVLTree {
 
     /**
      * Left -> Right -> Root. Visits and highlights the root last, after both
-     * subtrees (REQ-4.1). Same VISIT HighlightStep + value accumulation
-     * pattern as inorderTraverse() / preorderTraverse().
+     * subtrees (REQ-4.1).
      */
     private void postorderTraverse(AVLNode node, List<Integer> values, List<TreeStep> steps) {
         if (node == null) {
@@ -356,9 +389,7 @@ public class AVLTree {
     /**
      * Breadth-first, level by level, left to right within each level (REQ-4.1).
      * Implemented iteratively with a FIFO queue rather than recursion, since
-     * level-order is inherently a queue-driven traversal. Same VISIT
-     * HighlightStep + value accumulation pattern as the other traversal
-     * helpers, so playback order matches the queue's dequeue order exactly.
+     * level-order is inherently a queue-driven traversal.
      */
     private void levelOrderTraverse(AVLNode root, List<Integer> values, List<TreeStep> steps) {
         Queue<AVLNode> queue = new ArrayDeque<>();
@@ -382,23 +413,28 @@ public class AVLTree {
 
     /**
      * Mutates the tree to insert {@code key} and rebalances on the way back
-     * up. Only records RotateStep entries; comparison highlights are recorded
-     * separately by insert()'s read-only phase before this runs.
+     * up. For a double-rotation case (Left-Right / Right-Left), the two
+     * atomic rotations are recorded as TWO separate RotateSteps (inner
+     * rotation first, then outer) instead of one combined step, so the
+     * caller can replay and animate each one individually. Comparison
+     * highlights are recorded separately by insert()'s read-only phase
+     * before this runs.
      */
-
     private AVLNode rebalance(AVLNode node, int insertedKey, List<TreeStep> steps) {
         int balance = balanceFactor(node);
 
         // Left-heavy
         if (balance > 1) {
             if (insertedKey < node.getLeft().getKey()) {
-                // Left-Left case
+                // Left-Left case: single atomic rotation
                 steps.add(new RotateStep(RotationType.RIGHT, node.getKey()));
                 return rotateRight(node);
             } else {
-                // Left-Right case
-                steps.add(new RotateStep(RotationType.LEFT_RIGHT, node.getKey()));
+                // Left-Right case: two atomic rotations (inner LEFT, then outer RIGHT)
+                int innerKey = node.getLeft().getKey();
+                steps.add(new RotateStep(RotationType.LEFT, innerKey));
                 node.setLeft(rotateLeft(node.getLeft()));
+                steps.add(new RotateStep(RotationType.RIGHT, node.getKey()));
                 return rotateRight(node);
             }
         }
@@ -406,13 +442,15 @@ public class AVLTree {
         // Right-heavy
         if (balance < -1) {
             if (insertedKey > node.getRight().getKey()) {
-                // Right-Right case
+                // Right-Right case: single atomic rotation
                 steps.add(new RotateStep(RotationType.LEFT, node.getKey()));
                 return rotateLeft(node);
             } else {
-                // Right-Left case
-                steps.add(new RotateStep(RotationType.RIGHT_LEFT, node.getKey()));
+                // Right-Left case: two atomic rotations (inner RIGHT, then outer LEFT)
+                int innerKey = node.getRight().getKey();
+                steps.add(new RotateStep(RotationType.RIGHT, innerKey));
                 node.setRight(rotateRight(node.getRight()));
+                steps.add(new RotateStep(RotationType.LEFT, node.getKey()));
                 return rotateLeft(node);
             }
         }
@@ -432,19 +470,27 @@ public class AVLTree {
         return node;
     }
 
+    /**
+     * Same rotation-case logic as {@link #rebalance}, but the pivot decision
+     * uses the child's own balance factor (standard AVL delete rebalancing)
+     * rather than the inserted key's position. Double-rotation cases are
+     * likewise split into two atomic RotateSteps.
+     */
     private AVLNode rebalanceAfterDelete(AVLNode node, List<TreeStep> steps) {
         int balance = balanceFactor(node);
 
         // Left-heavy
         if (balance > 1) {
             if (balanceFactor(node.getLeft()) >= 0) {
-                // Left-Left case
+                // Left-Left case: single atomic rotation
                 steps.add(new RotateStep(RotationType.RIGHT, node.getKey()));
                 return rotateRight(node);
             } else {
-                // Left-Right case
-                steps.add(new RotateStep(RotationType.LEFT_RIGHT, node.getKey()));
+                // Left-Right case: two atomic rotations (inner LEFT, then outer RIGHT)
+                int innerKey = node.getLeft().getKey();
+                steps.add(new RotateStep(RotationType.LEFT, innerKey));
                 node.setLeft(rotateLeft(node.getLeft()));
+                steps.add(new RotateStep(RotationType.RIGHT, node.getKey()));
                 return rotateRight(node);
             }
         }
@@ -452,13 +498,15 @@ public class AVLTree {
         // Right-heavy
         if (balance < -1) {
             if (balanceFactor(node.getRight()) <= 0) {
-                // Right-Right case
+                // Right-Right case: single atomic rotation
                 steps.add(new RotateStep(RotationType.LEFT, node.getKey()));
                 return rotateLeft(node);
             } else {
-                // Right-Left case
-                steps.add(new RotateStep(RotationType.RIGHT_LEFT, node.getKey()));
+                // Right-Left case: two atomic rotations (inner RIGHT, then outer LEFT)
+                int innerKey = node.getRight().getKey();
+                steps.add(new RotateStep(RotationType.RIGHT, innerKey));
                 node.setRight(rotateRight(node.getRight()));
+                steps.add(new RotateStep(RotationType.LEFT, node.getKey()));
                 return rotateLeft(node);
             }
         }
@@ -492,6 +540,36 @@ public class AVLTree {
         updateHeight(y);
 
         return y;
+    }
+
+    /**
+     * Applies a single ATOMIC rotation (LEFT or RIGHT only - never a double
+     * rotation) at the node identified by {@code key}, inside a full tree,
+     * and returns the resulting root. Every other node is left untouched.
+     * <p>
+     * This is the replay primitive used by {@link #appendRebalanceAnimationSteps}:
+     * since a rotation only ever rearranges the local subtree rooted at its
+     * pivot, and a pivot's key is stable across deep copies, re-finding that
+     * key via ordinary BST navigation and rotating it in place reproduces
+     * exactly what the original mutating rebalance recursion did at that
+     * point - which lets a double rotation (or several independent rotations
+     * across different ancestors, as can happen during delete) be replayed
+     * and animated one atomic step at a time.
+     */
+    private AVLNode applyRotationAt(AVLNode node, int key, RotationType atomicType) {
+        if (node == null) {
+            return null;
+        }
+        if (node.getKey() == key) {
+            return atomicType == RotationType.RIGHT ? rotateRight(node) : rotateLeft(node);
+        }
+        if (key < node.getKey()) {
+            node.setLeft(applyRotationAt(node.getLeft(), key, atomicType));
+        } else {
+            node.setRight(applyRotationAt(node.getRight(), key, atomicType));
+        }
+        updateHeight(node);
+        return node;
     }
 
     // ── Height / balance helpers ─────────────────────────────────────────────
