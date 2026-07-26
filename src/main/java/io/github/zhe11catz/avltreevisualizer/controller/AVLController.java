@@ -20,6 +20,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.stage.FileChooser;
@@ -387,6 +389,28 @@ public class AVLController implements Initializable {
     }
 
     private void onReset() {
+        if (tree.isEmpty()) {
+            setStatus("Cây đang trống, không cần đặt lại.");
+            return;
+        }
+
+        Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmAlert.setTitle("Xác nhận đặt lại");
+        confirmAlert.setHeaderText(null);
+        confirmAlert.setContentText("Bạn có chắc chắn muốn xoá toàn bộ cây? Thao tác này không thể hoàn tác.");
+
+        ButtonType yesButton = new ButtonType("Đồng ý", ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType("Huỷ", ButtonBar.ButtonData.CANCEL_CLOSE);
+        confirmAlert.getButtonTypes().setAll(yesButton, noButton);
+
+        confirmAlert.showAndWait().ifPresent(response -> {
+            if (response == yesButton) {
+                performReset();
+            }
+        });
+    }
+
+    private void performReset() {
         tree.clear();
         treeCanvas.setRoot(null);
         try {
