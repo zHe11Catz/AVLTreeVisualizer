@@ -39,7 +39,7 @@
                 <Button fx:id="deleteButton" text="Xóa"/>
                 <Button fx:id="searchButton" text="Tìm kiếm"/>
                 <Button fx:id="importButton" text="Nạp tệp (.txt)"/>
-                <Button fx:id="resetButton" text="Đặt lại"/>
+                <Button fx:id="resetButton" text="Đặt lại cây"/>
             </HBox>
 
             <HBox spacing="8" alignment="CENTER_LEFT">
