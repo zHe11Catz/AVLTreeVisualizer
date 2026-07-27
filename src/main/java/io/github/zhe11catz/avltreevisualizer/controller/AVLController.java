@@ -35,6 +35,7 @@ import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.function.Supplier;
 
 /**
  * Main controller bridging user actions, model operations, and view updates.
@@ -93,6 +94,7 @@ public class AVLController implements Initializable {
     private TreeCanvas treeCanvas;
     private AnimationEngine animationEngine;
     private Runnable pendingCancelAction;
+    private Supplier<String> pendingStopStatus;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -264,12 +266,12 @@ public class AVLController implements Initializable {
             pendingCancelAction.run();
         }
         endAnimatedOperation();
-        setStatus("Đã dừng thao tác.");
+        setStatus(pendingStopStatus != null ? pendingStopStatus.get() : "Đã dừng thao tác.");
+        pendingStopStatus = null;
     }
 
-    private void showStopButton(boolean visible) {
-        stopButton.setVisible(visible);
-        stopButton.setManaged(visible);
+    private void showStopButton(boolean enabled) {
+        stopButton.setDisable(!enabled);
     }
 
     private String formatTraversalResult(List<Integer> values) {
@@ -322,13 +324,10 @@ public class AVLController implements Initializable {
 
         for (int value : rawValues) {
             if (!ValidationUtils.isValidNodeValue(value)) {
-                // REQ-5.1 / business rule: values outside [-9999, 9999] are ignored.
                 skippedRange++;
                 continue;
             }
             if (tree.contains(value) || !seenInFile.add(value)) {
-                // Business rule "Tính duy nhất khoá": skip values already in the
-                // tree or repeated within the file itself.
                 skippedDuplicate++;
                 continue;
             }
@@ -346,8 +345,18 @@ public class AVLController implements Initializable {
             return;
         }
 
-        setControlsDisabled(true);
-        insertNextFromImport(toInsert, 0, rawValues.size(), skippedRange, skippedDuplicate, skippedLimit);
+        final int finalSkippedRange = skippedRange;
+        final int finalSkippedDuplicate = skippedDuplicate;
+        final int finalSkippedLimit = skippedLimit;
+        final int totalRaw = rawValues.size();
+
+        int[] insertedCount = {0};
+
+        beginAnimatedOperation(() -> treeCanvas.setRoot(tree.getRoot()));
+        pendingStopStatus = () -> "Đã dừng thao tác. " +
+                buildImportSummary(insertedCount[0], totalRaw, finalSkippedRange, finalSkippedDuplicate, finalSkippedLimit);
+        setStatus("Đang nạp dữ liệu từ tệp...");
+        insertNextFromImport(toInsert, 0, totalRaw, finalSkippedRange, finalSkippedDuplicate, finalSkippedLimit, insertedCount);
     }
 
     /**
@@ -355,17 +364,20 @@ public class AVLController implements Initializable {
      * completion callback so each node is animated in sequence.
      */
     private void insertNextFromImport(List<Integer> toInsert, int index, int totalRaw,
-                                      int skippedRange, int skippedDuplicate, int skippedLimit) {
+                                      int skippedRange, int skippedDuplicate, int skippedLimit,
+                                      int[] insertedCount) {
         if (index >= toInsert.size()) {
-            setControlsDisabled(false);
+            pendingStopStatus = null;
+            endAnimatedOperation();
             setStatus(buildImportSummary(toInsert.size(), totalRaw, skippedRange, skippedDuplicate, skippedLimit));
             return;
         }
 
         int value = toInsert.get(index);
         var result = tree.insert(value);
+        insertedCount[0] = index + 1;
         animationEngine.playSteps(result.getSteps(), () ->
-                insertNextFromImport(toInsert, index + 1, totalRaw, skippedRange, skippedDuplicate, skippedLimit));
+                insertNextFromImport(toInsert, index + 1, totalRaw, skippedRange, skippedDuplicate, skippedLimit, insertedCount));
     }
 
     private String buildImportSummary(int inserted, int totalRaw, int skippedRange, int skippedDuplicate, int skippedLimit) {
