@@ -1,19 +1,23 @@
 package io.github.zhe11catz.avltreevisualizer.model.persistence;
 
 /**
- * Serializable representation of the AVL tree for JSON persistence.
+ * Serializable representation of the AVL tree AND app settings for JSON
+ * persistence. Both are stored in the same avl_state.json file
+ * so there is a single source of truth for "what to restore on startup".
  */
 public class TreeStateDto {
 
     private Integer rootKey;
     private TreeNodeDto root;
+    private SettingsDto settings;
 
     public TreeStateDto() {
     }
 
-    public TreeStateDto(TreeNodeDto root) {
+    public TreeStateDto(TreeNodeDto root, SettingsDto settings) {
         this.root = root;
         this.rootKey = root == null ? null : root.getKey();
+        this.settings = settings;
     }
 
     public Integer getRootKey() {
@@ -31,6 +35,14 @@ public class TreeStateDto {
     public void setRoot(TreeNodeDto root) {
         this.root = root;
         this.rootKey = root == null ? null : root.getKey();
+    }
+
+    public SettingsDto getSettings() {
+        return settings;
+    }
+
+    public void setSettings(SettingsDto settings) {
+        this.settings = settings;
     }
 
     /**

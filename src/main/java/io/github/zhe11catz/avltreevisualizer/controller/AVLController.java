@@ -146,9 +146,10 @@ public class AVLController implements Initializable {
      * Called after FXML injection to wire model, view, and persistence.
      */
     public void initializeView() {
-        settings = new AppSettings();
         storageService = new StorageService();
-        tree = storageService.loadTree().orElseGet(AVLTree::new);
+        var loaded = storageService.loadState();
+        tree = loaded.map(StorageService.LoadedState::tree).orElseGet(AVLTree::new);
+        settings = loaded.map(StorageService.LoadedState::settings).orElseGet(AppSettings::new);
 
         treeCanvas = new TreeCanvas(900, 500);
         treeCanvas.setRoot(tree.getRoot());
@@ -495,13 +496,9 @@ public class AVLController implements Initializable {
 
     private void saveStateOnExit() {
         try {
-            if (tree.isEmpty()) {
-                storageService.clearSavedState();
-            } else {
-                storageService.saveTree(tree);
-            }
+            storageService.saveState(tree, settings);
         } catch (Exception ex) {
-            LOGGER.log(Level.WARNING, "Failed to save tree state on exit", ex);
+            LOGGER.log(Level.WARNING, "Failed to save app state on exit", ex);
         }
     }
 }
