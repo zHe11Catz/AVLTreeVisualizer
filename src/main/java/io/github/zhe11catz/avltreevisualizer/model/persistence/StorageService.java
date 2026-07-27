@@ -2,6 +2,7 @@ package io.github.zhe11catz.avltreevisualizer.model.persistence;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.github.zhe11catz.avltreevisualizer.model.settings.AppSettings;
 import io.github.zhe11catz.avltreevisualizer.model.tree.AVLNode;
 import io.github.zhe11catz.avltreevisualizer.model.tree.AVLTree;
 import io.github.zhe11catz.avltreevisualizer.util.Constants;
@@ -16,7 +17,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Handles reading and writing tree state to avl_state.json.
+ * Handles reading and writing app state (tree + settings) to avl_state.json.
  */
 public class StorageService {
 
@@ -35,32 +36,49 @@ public class StorageService {
     }
 
     /**
-     * Loads tree state from disk if the file exists and is valid.
+     * Bundles the two independent pieces of state restored from disk, since
+     * the tree and the settings live in the same file but are otherwise
+     * unrelated to each other.
      */
-    public Optional<AVLTree> loadTree() {
+    public record LoadedState(AVLTree tree, AppSettings settings) {
+    }
+
+    /**
+     * Loads app state from disk if the file exists and is valid. If the tree
+     * portion is missing/corrupt but settings are present (or vice versa),
+     * whichever part is valid is still returned rather than discarding both.
+     */
+    public Optional<LoadedState> loadState() {
         if (!Files.exists(stateFilePath)) {
             return Optional.empty();
         }
 
         try (Reader reader = Files.newBufferedReader(stateFilePath)) {
             TreeStateDto dto = gson.fromJson(reader, TreeStateDto.class);
-            if (dto == null || dto.getRoot() == null) {
+            if (dto == null) {
                 return Optional.empty();
             }
+
             AVLTree tree = new AVLTree();
-            tree.setRoot(fromDto(dto.getRoot()));
-            return Optional.of(tree);
+            if (dto.getRoot() != null) {
+                tree.setRoot(fromDto(dto.getRoot()));
+            }
+
+            AppSettings settings = fromSettingsDto(dto.getSettings());
+
+            return Optional.of(new LoadedState(tree, settings));
         } catch (IOException | RuntimeException ex) {
-            LOGGER.log(Level.WARNING, "Failed to load tree state from " + stateFilePath, ex);
+            LOGGER.log(Level.WARNING, "Failed to load app state from " + stateFilePath, ex);
             return Optional.empty();
         }
     }
 
     /**
-     * Persists the current tree state to disk.
+     * Persists both the current tree and current settings to disk in one
+     * combined JSON document (REQ-6.1, REQ-7.4).
      */
-    public void saveTree(AVLTree tree) throws IOException {
-        TreeStateDto dto = new TreeStateDto(toDto(tree.getRoot()));
+    public void saveState(AVLTree tree, AppSettings settings) throws IOException {
+        TreeStateDto dto = new TreeStateDto(toDto(tree.getRoot()), toSettingsDto(settings));
         try (Writer writer = Files.newBufferedWriter(stateFilePath)) {
             gson.toJson(dto, writer);
         }
@@ -71,6 +89,27 @@ public class StorageService {
      */
     public void clearSavedState() throws IOException {
         Files.deleteIfExists(stateFilePath);
+    }
+
+    private SettingsDto toSettingsDto(AppSettings settings) {
+        return new SettingsDto(
+                settings.isAnimationEnabled(),
+                settings.getAnimationSpeed().name()
+        );
+    }
+
+    private AppSettings fromSettingsDto(SettingsDto dto) {
+        AppSettings settings = new AppSettings();
+        if (dto == null) {
+            return settings;
+        }
+        settings.setAnimationEnabled(dto.isAnimationEnabled());
+        try {
+            settings.setAnimationSpeed(AppSettings.AnimationSpeed.valueOf(dto.getAnimationSpeed()));
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            LOGGER.log(Level.WARNING, "Unknown animation speed in state file: " + dto.getAnimationSpeed());
+        }
+        return settings;
     }
 
     private TreeStateDto.TreeNodeDto toDto(AVLNode node) {

@@ -18,7 +18,7 @@ public class SettingsPanel extends VBox {
         this.settings = settings;
         getStyleClass().add("settings-panel");
 
-        animationToggle = new CheckBox("Bật animation");
+        animationToggle = new CheckBox("Bật hiệu ứng");
         animationToggle.setSelected(settings.isAnimationEnabled());
         animationToggle.selectedProperty().addListener((obs, oldVal, newVal) ->
                 settings.setAnimationEnabled(newVal));
