@@ -23,3 +23,9 @@
 .status-label {
     -fx-text-fill: #495057;
 }
+
+.settings-section-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #343a40;
+}
