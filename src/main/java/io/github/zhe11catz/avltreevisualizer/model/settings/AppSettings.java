@@ -26,6 +26,12 @@ public class AppSettings {
     private boolean animationEnabled = true;
     private AnimationSpeed animationSpeed = AnimationSpeed.NORMAL;
 
+    // Persistence preferences: whether closing the app should write the tree structure
+    // and/or the animation settings to avl_state.json. These two flags themselves are always persisted,
+    // regardless of their own value, so the user's choice survives restarts.
+    private boolean saveTreeStateEnabled = true;
+    private boolean saveSettingsEnabled = true;
+
     public boolean isAnimationEnabled() {
         return animationEnabled;
     }
@@ -44,5 +50,21 @@ public class AppSettings {
 
     public long getAnimationDurationMs() {
         return animationSpeed.getDurationMs();
+    }
+
+    public boolean isSaveTreeStateEnabled() {
+        return saveTreeStateEnabled;
+    }
+
+    public void setSaveTreeStateEnabled(boolean saveTreeStateEnabled) {
+        this.saveTreeStateEnabled = saveTreeStateEnabled;
+    }
+
+    public boolean isSaveSettingsEnabled() {
+        return saveSettingsEnabled;
+    }
+
+    public void setSaveSettingsEnabled(boolean saveSettingsEnabled) {
+        this.saveSettingsEnabled = saveSettingsEnabled;
     }
 }

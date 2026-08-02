@@ -47,6 +47,9 @@ public class StorageService {
      * Loads app state from disk if the file exists and is valid. If the tree
      * portion is missing/corrupt but settings are present (or vice versa),
      * whichever part is valid is still returned rather than discarding both.
+     * The saveTreeState/saveSettings preference flags are restored
+     * regardless of whether the tree/settings substance itself was saved,
+     * so the checkbox states persist across restarts.
      */
     public Optional<LoadedState> loadState() {
         if (!Files.exists(stateFilePath)) {
@@ -65,6 +68,8 @@ public class StorageService {
             }
 
             AppSettings settings = fromSettingsDto(dto.getSettings());
+            settings.setSaveTreeStateEnabled(dto.isSaveTreeState());
+            settings.setSaveSettingsEnabled(dto.isSaveSettings());
 
             return Optional.of(new LoadedState(tree, settings));
         } catch (IOException | RuntimeException ex) {
@@ -74,11 +79,24 @@ public class StorageService {
     }
 
     /**
-     * Persists both the current tree and current settings to disk in one
-     * combined JSON document (REQ-6.1, REQ-7.4).
+     * Persists app state to disk in one combined JSON document. Whether the
+     * tree structure and/or the animation settings are actually written is
+     * controlled by {@link AppSettings#isSaveTreeStateEnabled()} and
+     * {@link AppSettings#isSaveSettingsEnabled()}. The two preference flags themselves are
+     * always written so the checkboxes keep their state next launch.
      */
     public void saveState(AVLTree tree, AppSettings settings) throws IOException {
-        TreeStateDto dto = new TreeStateDto(toDto(tree.getRoot()), toSettingsDto(settings));
+        TreeStateDto.TreeNodeDto rootDto = settings.isSaveTreeStateEnabled()
+                ? toDto(tree.getRoot())
+                : null;
+        SettingsDto settingsDto = settings.isSaveSettingsEnabled()
+                ? toSettingsDto(settings)
+                : null;
+
+        TreeStateDto dto = new TreeStateDto(rootDto, settingsDto);
+        dto.setSaveTreeState(settings.isSaveTreeStateEnabled());
+        dto.setSaveSettings(settings.isSaveSettingsEnabled());
+
         try (Writer writer = Files.newBufferedWriter(stateFilePath)) {
             gson.toJson(dto, writer);
         }
