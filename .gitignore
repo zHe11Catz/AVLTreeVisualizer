@@ -4,6 +4,13 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+# Maven shade plugin artifact
+dependency-reduced-pom.xml
+
+# jpackage output
+release/
+release-debug/
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
