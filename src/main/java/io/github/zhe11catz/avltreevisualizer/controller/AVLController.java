@@ -95,6 +95,7 @@ public class AVLController implements Initializable {
     private AnimationEngine animationEngine;
     private Runnable pendingCancelAction;
     private Supplier<String> pendingStopStatus;
+    private File lastImportDirectory;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -290,10 +291,17 @@ public class AVLController implements Initializable {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("Chọn tệp dữ liệu");
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text Files", "*.txt"));
+
+        if (lastImportDirectory != null && lastImportDirectory.isDirectory()) {
+            chooser.setInitialDirectory(lastImportDirectory);
+        }
+
         File file = chooser.showOpenDialog(rootPane.getScene().getWindow());
         if (file == null) {
             return;
         }
+
+        lastImportDirectory = file.getParentFile();
 
         List<Integer> rawValues;
         try {
